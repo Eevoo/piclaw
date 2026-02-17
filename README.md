@@ -95,10 +95,23 @@ Piclaw is a persistent orchestrator that connects WhatsApp to pi:
 
 ```bash
 # Inside the container
-cd /home/agent/piclaw
-echo 'ANTHROPIC_API_KEY=sk-...' > .env   # or OPENAI_API_KEY, etc.
-bun run src/index.ts                      # scan QR code to connect WhatsApp
+piclaw                                    # scan QR code to connect WhatsApp
 ```
+
+> **Note:** Piclaw does not require any API keys directly. LLM provider, model, and
+> credentials are all configured through pi's own settings (`~/.pi/agent/settings.json`).
+> Run `pi` interactively once to set your provider, or edit the settings file directly:
+>
+> ```json
+> {
+>   "defaultProvider": "github-copilot",
+>   "defaultModel": "claude-sonnet-4-20250514"
+> }
+> ```
+>
+> Pi supports multiple providers (Anthropic, OpenAI, Google, GitHub Copilot, etc.).
+> Any API keys needed are resolved by pi itself — via its settings, environment
+> variables, or credential helpers — not by piclaw.
 
 ### IPC Skills
 
@@ -109,15 +122,17 @@ Pi can interact with piclaw while running via IPC files:
 
 ## Agent Configuration
 
-Pi uses `AGENTS.md` for project context and `.pi/` for configuration:
+Pi uses `AGENTS.md` for project context and `.pi/` for configuration. LLM provider
+and model selection are configured entirely through pi's settings — piclaw simply
+invokes `pi --print` and inherits whatever provider/model/keys pi is configured to use.
 
 | Path | Purpose |
 |------|---------|
+| `~/.pi/agent/settings.json` | Global settings (provider, model, thinking level) |
+| `~/.pi/agent/skills/` | Global skills (schedule, send-message) |
 | `AGENTS.md` | Project instructions (loaded at startup) |
 | `.pi/skills/` | Project-level skills (`/skill:name`) |
-| `.pi/settings.json` | Project-level settings |
-| `~/.pi/agent/skills/` | Global skills (schedule, send-message) |
-| `~/.pi/agent/settings.json` | Global settings |
+| `.pi/settings.json` | Project-level settings (overrides global) |
 
 ### Skills
 

@@ -1,16 +1,11 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { AGENT_TIMEOUT, DATA_DIR, SESSIONS_DIR, WORKSPACE_DIR } from "./config.js";
-import { readEnvFile } from "./env.js";
 
 export interface AgentOutput {
   status: "success" | "error";
   result: string | null;
   error?: string;
-}
-
-function readSecrets(): Record<string, string> {
-  return readEnvFile(["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "GITHUB_TOKEN"]);
 }
 
 export async function runAgent(prompt: string, chatJid: string): Promise<AgentOutput> {
@@ -21,10 +16,10 @@ export async function runAgent(prompt: string, chatJid: string): Promise<AgentOu
   const logsDir = join(WORKSPACE_DIR, "logs");
   mkdirSync(logsDir, { recursive: true });
 
-  const secrets = readSecrets();
+  // LLM provider/model/keys are configured via pi's own settings
+  // (~/.pi/agent/settings.json) — no API keys needed here.
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
-    ...secrets,
     HOME: process.env.HOME || "/home/agent",
     TERM: "xterm-256color",
     PICLAW_DATA: DATA_DIR,
