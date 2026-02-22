@@ -41,7 +41,7 @@ Piclaw ships with a built-in web UI (Vibes-inspired). Once the container is up, 
 http://localhost:8080
 ```
 
-Set `PICLAW_WEB_PORT` or `PICLAW_WEB_HOST` to change where it listens.
+Set `PICLAW_WEB_PORT` or `PICLAW_WEB_HOST` to change where it listens. Use `PICLAW_WEB_IDLE_TIMEOUT` (seconds, `0` disables) to drop idle web clients. CLI overrides are also available: `piclaw --port`, `--host`, `--idle-timeout`.
 
 ## Volumes & Persistence
 
@@ -92,7 +92,7 @@ All piclaw paths are env-configurable:
 | `PICLAW_WORKSPACE` | `/workspace` | Where pi runs (working directory) |
 | `PICLAW_STORE` | `/workspace/.piclaw/store` | SQLite database location |
 | `PICLAW_DATA` | `/workspace/.piclaw/data` | Sessions, IPC, chats.json |
-| `ASSISTANT_NAME` | `pi` | Trigger name (`@pi`) |
+| `ASSISTANT_NAME` | `PiClaw` | Trigger name (`@PiClaw`) |
 | `AGENT_TIMEOUT` | `600000` | Max pi invocation time (ms) |
 
 ## Piclaw — WhatsApp Integration
@@ -100,8 +100,8 @@ All piclaw paths are env-configurable:
 Piclaw is a persistent orchestrator that connects WhatsApp to pi. It runs agents via the Pi SDK AgentSession (RPC-style), not `pi --print`:
 
 1. WhatsApp messages arrive via Baileys
-2. Messages matching `@pi` trigger are stored in SQLite
-3. Poll loop detects new messages, sends prompt to persistent agent session
+2. All messages are stored in SQLite
+3. Poll loop detects new messages; if any message includes the `@<ASSISTANT_NAME>` trigger, it sends the prompt to the persistent agent session
 4. Pi's output is sent back to the chat
 
 ### Agent Pool (Warm Start)
@@ -113,7 +113,7 @@ memory:
 - *First message* pays the warm-up cost (resource discovery, model init)
 - *Subsequent messages* reuse the live session — no startup overhead, full
   conversation context already loaded
-- Sessions auto-compact when context gets large
+- Sessions auto-compact when context gets large (handled by pi SDK settings)
 - Idle sessions are evicted after 10 minutes to free memory
 - All sessions are gracefully disposed on shutdown
 
@@ -181,8 +181,8 @@ automatically. Messages longer than 1024 characters are truncated (Pushover API 
 ## Agent Configuration
 
 Pi uses `AGENTS.md` for project context and `.pi/` for configuration. LLM provider
-and model selection are configured entirely through pi's settings — piclaw simply
-invokes `pi --print` and inherits whatever provider/model/keys pi is configured to use.
+and model selection are configured entirely through pi's settings — piclaw uses the
+Pi SDK `AgentSession` and inherits whatever provider/model/keys pi is configured to use.
 
 | Path | Purpose |
 |------|---------|
