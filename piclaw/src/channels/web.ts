@@ -506,7 +506,7 @@ export class WebChannel {
         }
 
         if (event.type === "tool_execution_end") {
-          const title = lookupToolTitle(event.toolCallId, event.toolName, event.args);
+          const title = lookupToolTitle(event.toolCallId, event.toolName);
           toolTitles.delete(event.toolCallId);
           this.broadcastEvent("agent_status", {
             thread_id: threadId,
