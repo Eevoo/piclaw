@@ -11,6 +11,7 @@ A minimal Docker-based sandbox for running [Pi Coding Agent](https://github.com/
 - **Bun** JavaScript runtime
 - **Pi Coding Agent** (pre-installed globally via `bun add -g`)
 - **Piclaw** — WhatsApp → pi orchestrator (nanoclaw-style agentic loop)
+- **Web UI** — Built-in single-user UI inspired by [Vibes](https://github.com/rcarmo/vibes)
 - Essential dev tools: git, vim, tmux, htop, ripgrep, jq, tree, build-essential
 
 ## Quick Start
@@ -31,6 +32,16 @@ pi
 ```
 
 Then use `/skill:setup` to scaffold a new project, or `/skill:debug` to check the environment.
+
+### Web UI
+
+Piclaw ships with a built-in web UI (Vibes-inspired). Once the container is up, open:
+
+```
+http://localhost:8080
+```
+
+Set `PICLAW_WEB_PORT` or `PICLAW_WEB_HOST` to change where it listens.
 
 ## Volumes & Persistence
 
@@ -179,6 +190,7 @@ Skills are on-demand capabilities invoked via `/skill:name`:
 - `/skill:setup` — Initialize a new project
 - `/skill:debug` — Diagnose container/environment issues
 - `/skill:reload` — Hot-restart piclaw after code changes
+- `/skill:playwright` — Local Playwright browser automation
 
 Add your own to `.pi/skills/<name>/SKILL.md` (project) or `~/.pi/agent/skills/<name>/SKILL.md` (global).
 
