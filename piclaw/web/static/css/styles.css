@@ -1040,6 +1040,20 @@ body {
     margin: 0;
 }
 
+.agent-thinking-body ul,
+.agent-thinking-body ol {
+    margin: 0;
+    padding-left: 1.25em;
+}
+
+.agent-thinking-body li {
+    margin: 0;
+}
+
+.agent-thinking-body blockquote {
+    margin: 0;
+}
+
 .agent-thinking-body pre {
     margin: 0;
     white-space: pre-wrap;
