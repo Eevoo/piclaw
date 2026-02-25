@@ -137,17 +137,19 @@ function linkifyHashtagsInHtml(html_content) {
 }
 
 /**
- * Render thinking panels as plain text to avoid markdown whitespace artifacts.
+ * Render thinking panels with markdown while keeping tags/quotes intact.
  */
-function renderThinkingText(text) {
+function renderThinkingMarkdown(text) {
     if (!text) return '';
-    const value = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const escaped = value
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const decoded = decodeEntities(normalized);
+    const escaped = decoded
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    return escaped.replace(/\n/g, '<br>');
+        .replace(/>/g, '&gt;');
+    let html_content = window.marked ? marked.parse(escaped) : escaped.replace(/\n/g, '<br>');
+    html_content = renderMath(html_content);
+    return html_content;
 }
 
 // Render pending mermaid diagrams in the DOM
@@ -1019,7 +1021,7 @@ function AgentStatus({ status, draft, plan, thought, pendingRequest }) {
                     <div class="agent-thinking-title">Planning</div>
                     <div
                         class="agent-thinking-body"
-                        dangerouslySetInnerHTML=${{ __html: renderThinkingText(plan) }}
+                        dangerouslySetInnerHTML=${{ __html: renderThinkingMarkdown(plan) }}
                     />
                 </div>
             `}
@@ -1030,7 +1032,7 @@ function AgentStatus({ status, draft, plan, thought, pendingRequest }) {
                         <div class="agent-thinking-title thought">Thoughts</div>
                         <div
                             class="agent-thinking-body"
-                            dangerouslySetInnerHTML=${{ __html: renderThinkingText(truncated.text) }}
+                            dangerouslySetInnerHTML=${{ __html: renderThinkingMarkdown(truncated.text) }}
                         />
                         ${truncated.omitted > 0 && html`
                             <div class="agent-thinking-truncation">(${truncated.omitted} more lines)</div>
@@ -1045,7 +1047,7 @@ function AgentStatus({ status, draft, plan, thought, pendingRequest }) {
                         <div class="agent-thinking-title thought">Draft</div>
                         <div
                             class="agent-thinking-body"
-                            dangerouslySetInnerHTML=${{ __html: renderThinkingText(truncated.text) }}
+                            dangerouslySetInnerHTML=${{ __html: renderThinkingMarkdown(truncated.text) }}
                         />
                         ${truncated.omitted > 0 && html`
                             <div class="agent-thinking-truncation">(${truncated.omitted} more lines)</div>
