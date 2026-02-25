@@ -14,6 +14,10 @@ A minimal Docker-based sandbox for running [Pi Coding Agent](https://github.com/
 - **Web UI** — Built-in single-user UI inspired by [Vibes](https://github.com/rcarmo/vibes)
 - Essential dev tools: git, vim, tmux, htop, ripgrep, jq, tree, build-essential
 
+The Web UI includes a webapp manifest and is primarily designed for mobile use, but also works great on desktop/tablet:
+
+<img style="width: 50%; height: auto; margin-left: auto; margin-right:auto;" width="918" height="1414" alt="image" src="https://github.com/user-attachments/assets/442cc64d-de12-42fc-8a37-1ef26bd57bab" />
+
 ## Quick Start
 
 ```bash
