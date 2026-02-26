@@ -28,6 +28,17 @@ function decodeEntities(text) {
     return doc.documentElement.textContent;
 }
 
+function decodeEntitiesDeep(text, maxDepth = 2) {
+    if (!text) return text;
+    let current = text;
+    for (let i = 0; i < maxDepth; i += 1) {
+        const next = decodeEntities(current);
+        if (next === current) break;
+        current = next;
+    }
+    return current;
+}
+
 /**
  * Render LaTeX math expressions using KaTeX
  * Handles $$...$$ for display math and $...$ for inline math
@@ -93,7 +104,7 @@ function renderMarkdown(text, onHashtagClick) {
     html_content = html_content.replace(
         /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
         (match, code) => {
-            const decoded = decodeEntities(code.trim());
+            const decoded = decodeEntitiesDeep(code.trim(), 3);
             const encoded = btoa(unescape(encodeURIComponent(decoded)));
             return `<div class="mermaid-container" data-mermaid="${encoded}"><div class="mermaid-loading">Loading diagram...</div></div>`;
         }
@@ -170,7 +181,8 @@ async function renderMermaidDiagrams(container) {
     for (const el of pending) {
         try {
             const encoded = el.dataset.mermaid;
-            const code = decodeURIComponent(escape(atob(encoded)));
+            const raw = decodeURIComponent(escape(atob(encoded)));
+            const code = decodeEntitiesDeep(raw, 2);
             const svg = await renderMermaid(code, { ...theme, transparent: true });
             el.innerHTML = svg;
             el.removeAttribute('data-mermaid');
