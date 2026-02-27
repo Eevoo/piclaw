@@ -433,6 +433,29 @@ function getAgentName(agentId, agents) {
     return name ? name.charAt(0).toUpperCase() + name.slice(1) : DEFAULT_AGENT_NAME;
 }
 
+function getTurnColor(turnId) {
+    if (!turnId) return null;
+    const palette = [
+        '#4ECDC4',
+        '#FF6B6B',
+        '#45B7D1',
+        '#BB8FCE',
+        '#FDCB6E',
+        '#00B894',
+        '#74B9FF',
+        '#FD79A8',
+        '#81ECEC',
+        '#FFA07A',
+    ];
+    const str = String(turnId);
+    let hash = 0;
+    for (let i = 0; i < str.length; i += 1) {
+        hash = (hash * 31 + str.charCodeAt(i)) % 0x7fffffff;
+    }
+    const index = Math.abs(hash) % palette.length;
+    return palette[index];
+}
+
 /**
  * Update browser theme color (affects mobile chrome and PWA title bar)
  */
@@ -1131,8 +1154,8 @@ function AgentStatus({ status, draft, plan, thought, pendingRequest, turnId }) {
     if (!status && !hasDraft && !hasPlan && !hasThought && !pendingRequest) return null;
 
     const activeTurn = status?.turn_id || turnId;
-    const turnLabel = activeTurn ? `Turn ${String(activeTurn).slice(-4)}` : '';
-    const panelTitle = (label) => (turnLabel ? `${label} (${turnLabel})` : label);
+    const turnColor = getTurnColor(activeTurn);
+    const panelTitle = (label) => label;
     
     let content = '';
     const title = status?.title;
@@ -1147,18 +1170,17 @@ function AgentStatus({ status, draft, plan, thought, pendingRequest, turnId }) {
         content = title || statusText || 'Working...';
     }
 
-    if (turnLabel && status) {
-        content = `${turnLabel} — ${content}`;
-    }
-
     const renderThinkingPanel = ({ panelTitle, text, totalLines, maxLines, titleClass }) => {
         const truncated = typeof maxLines === 'number'
             ? truncateLines(text, maxLines, totalLines)
             : { text: text || '', omitted: 0, totalLines: Number.isFinite(totalLines) ? totalLines : 0 };
         if (!truncated.text && !(Number.isFinite(truncated.totalLines) && truncated.totalLines > 0)) return null;
         return html`
-            <div class="agent-thinking">
-                <div class="agent-thinking-title ${titleClass || ''}">${panelTitle}</div>
+            <div class="agent-thinking" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>
+                <div class="agent-thinking-title ${titleClass || ''}">
+                    ${turnColor && html`<span class="turn-dot" aria-hidden="true"></span>`}
+                    ${panelTitle}
+                </div>
                 <div
                     class="agent-thinking-body"
                     dangerouslySetInnerHTML=${{ __html: renderThinkingMarkdown(truncated.text) }}
@@ -1176,7 +1198,8 @@ function AgentStatus({ status, draft, plan, thought, pendingRequest, turnId }) {
     return html`
         <div class="agent-status-panel">
             ${pendingRequest && html`
-                <div class="agent-status agent-status-request" aria-live="polite">
+                <div class="agent-status agent-status-request" aria-live="polite" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>
+                    <span class="turn-dot" aria-hidden="true"></span>
                     <div class="agent-status-spinner"></div>
                     <span class="agent-status-text">${pendingMessage}</span>
                 </div>
@@ -1201,7 +1224,8 @@ function AgentStatus({ status, draft, plan, thought, pendingRequest, turnId }) {
                 titleClass: 'thought',
             })}
             ${status && html`
-                <div class="agent-status">
+                <div class="agent-status" style=${turnColor ? `--turn-color: ${turnColor};` : ''}>
+                    ${turnColor && html`<span class="turn-dot" aria-hidden="true"></span>`}
                     <div class="agent-status-spinner"></div>
                     <span class="agent-status-text">${content}</span>
                 </div>
