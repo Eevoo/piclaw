@@ -1,5 +1,29 @@
+import { existsSync } from "fs";
+import { createTrackedBashOperations } from "./tools/tracked-bash.js";
 import { killTrackedProcesses } from "./process-tracker.js";
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+const SHELL_OUTPUT_LIMIT = 20000;
+const SHELL_TIMEOUT_SECONDS = 30;
+function resolveShellCwd() {
+    const preferred = "/workspace";
+    if (existsSync(preferred))
+        return preferred;
+    return process.cwd();
+}
+function formatShellBlock(command, output, meta = []) {
+    const lines = [`$ ${command}`];
+    const trimmed = output.trimEnd();
+    if (trimmed) {
+        lines.push(trimmed);
+    }
+    else {
+        lines.push("(no output)");
+    }
+    if (meta.length > 0) {
+        lines.push(...meta);
+    }
+    return ["```", ...lines, "```"].join("\n");
+}
 function stripTrigger(text, triggerPattern) {
     if (!triggerPattern)
         return text.trim();
@@ -65,6 +89,13 @@ export function parseControlCommand(text, triggerPattern) {
             raw: cleaned,
         };
     }
+    if (command.toLowerCase() === "/shell") {
+        return {
+            type: "shell",
+            command: args || undefined,
+            raw: cleaned,
+        };
+    }
     return null;
 }
 function normalizeModelMatch(models, provider, modelId) {
@@ -95,6 +126,68 @@ export async function applyControlCommand(session, modelRegistry, command) {
         return {
             status: "success",
             message: `Agent restarted. Killed ${killedLabel}.`,
+        };
+    }
+    if (command.type === "shell") {
+        const rawCommand = command.command?.trim();
+        if (!rawCommand) {
+            return {
+                status: "error",
+                message: "Usage: /shell <command>",
+            };
+        }
+        const cwd = resolveShellCwd();
+        const bash = createTrackedBashOperations();
+        let output = "";
+        let truncated = false;
+        const onData = (data) => {
+            if (truncated)
+                return;
+            const chunk = data.toString("utf8");
+            const remaining = SHELL_OUTPUT_LIMIT - output.length;
+            if (remaining <= 0) {
+                truncated = true;
+                return;
+            }
+            if (chunk.length > remaining) {
+                output += chunk.slice(0, remaining);
+                truncated = true;
+                return;
+            }
+            output += chunk;
+        };
+        let exitCode = null;
+        let timedOut = false;
+        let errorMessage = null;
+        try {
+            const result = await bash.exec(rawCommand, cwd, {
+                onData,
+                timeout: SHELL_TIMEOUT_SECONDS,
+            });
+            exitCode = result.exitCode ?? null;
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (message.startsWith("timeout:")) {
+                timedOut = true;
+            }
+            else if (message !== "aborted") {
+                errorMessage = message;
+            }
+        }
+        const meta = [];
+        if (truncated)
+            meta.push("(output truncated)");
+        if (timedOut)
+            meta.push(`(timed out after ${SHELL_TIMEOUT_SECONDS}s)`);
+        if (exitCode !== null)
+            meta.push(`(exit code ${exitCode})`);
+        if (errorMessage)
+            meta.push(`(error: ${errorMessage})`);
+        const isSuccess = !timedOut && !errorMessage && (exitCode === null || exitCode === 0);
+        return {
+            status: isSuccess ? "success" : "error",
+            message: formatShellBlock(rawCommand, output, meta),
         };
     }
     if (command.type === "model") {
@@ -194,6 +287,7 @@ export async function applyControlCommand(session, modelRegistry, command) {
         addLine("/model", "Select model or list available models");
         addLine("/thinking", "Show or set thinking level");
         addLine("/restart", "Restart the agent and stop subprocesses");
+        addLine("/shell", "Run a shell command and return output");
         addLine("/commands", "List available commands");
         const extensionRunner = session.extensionRunner;
         if (extensionRunner) {
