@@ -1418,6 +1418,13 @@ function App() {
         stalledPostIdRef.current = null;
     }, []);
 
+    // Scroll to bottom of timeline (column-reverse: bottom is scrollTop=0)
+    const scrollToBottom = useCallback(() => {
+        if (timelineRef.current) {
+            timelineRef.current.scrollTop = 0;
+        }
+    }, []);
+
     const finalizeStalledResponse = useCallback(() => {
         if (!isAgentRunningRef.current) return;
         isAgentRunningRef.current = false;
@@ -1497,12 +1504,6 @@ function App() {
         return () => clearInterval(interval);
     }, [finalizeStalledResponse]);
 
-    // Scroll to bottom of timeline (column-reverse: bottom is scrollTop=0)
-    const scrollToBottom = useCallback(() => {
-        if (timelineRef.current) {
-            timelineRef.current.scrollTop = 0;
-        }
-    }, []);
     
     // Load timeline or hashtag posts
     const loadPosts = useCallback(async (hashtag = null) => {
