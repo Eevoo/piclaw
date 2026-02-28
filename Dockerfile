@@ -1,5 +1,5 @@
 # PiClaw - Minimal Pi Coding Agent Sandbox
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # Environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -21,7 +21,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates curl wget unzip \
     bash-completion sudo less man \
-    git vim tmux htop tree ripgrep jq \
+    git vim tmux btop tree ripgrep jq \
     net-tools iproute2 dnsutils \
     rsync file strace \
     build-essential cmake make pkg-config \
@@ -38,15 +38,10 @@ RUN useradd -m -s /bin/bash -G sudo agent && \
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Layer 4: Install Homebrew, Bun, and Pi Coding Agent as agent
+# Layer 4: Install Bun, and Pi Coding Agent as agent
 USER agent
 WORKDIR /home/agent
-RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && \
-    echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc && \
-    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" && \
-    brew update && \
-    brew install lazygit && \
-    curl -fsSL https://bun.sh/install | bash && \
+RUN curl -fsSL https://bun.sh/install | bash && \
     export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && \
     bun add -g @mariozechner/pi-coding-agent && \
     PI_CLI="$(readlink -f $BUN_INSTALL/bin/pi)" && \
