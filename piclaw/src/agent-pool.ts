@@ -246,14 +246,11 @@ export class AgentPool {
       return session;
     }
 
-    const sessionRef: { session?: AgentSession } = {};
     const { tools, customTools } = createSessionTools(
       WORKSPACE_DIR,
       this.bashOperations,
       chatJid,
       this.attachments,
-      this.modelRegistry,
-      () => sessionRef.session
     );
     const session = await createDefaultSession(chatJid, {
       authStorage: this.authStorage,
@@ -262,7 +259,6 @@ export class AgentPool {
       tools,
       customTools,
     });
-    sessionRef.session = session;
 
     this.pool.set(chatJid, { session, lastUsed: Date.now() });
     await this.bindSession(session, chatJid);

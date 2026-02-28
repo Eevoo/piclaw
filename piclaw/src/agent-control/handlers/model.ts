@@ -74,7 +74,7 @@ export async function handleModel(session: AgentSession, modelRegistry: ModelReg
     selected = matches[0];
   }
 
-  const previousModel = session.model;
+  const _previousModel = session.model;
   try {
     await session.setModel(selected);
   } catch (err) {
@@ -126,7 +126,7 @@ export async function handleThinking(session: AgentSession, _modelRegistry: Mode
     };
   }
 
-  const previousLevel = session.thinkingLevel;
+  const _previousLevel = session.thinkingLevel;
   session.setThinkingLevel(requestedRaw as ThinkingLevel);
   const applied = session.thinkingLevel;
 

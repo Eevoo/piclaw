@@ -1,18 +1,12 @@
-import { mkdirSync, existsSync } from "fs";
-import { dirname, join, resolve } from "path";
-import { fileURLToPath } from "url";
+import { mkdirSync } from "fs";
+import { join } from "path";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager, } from "@mariozechner/pi-coding-agent";
 import { SESSIONS_DIR, WORKSPACE_DIR } from "../config.js";
+import { builtinExtensionFactories } from "../extensions/index.js";
 export function ensureSessionDir(chatJid) {
     const chatSessionDir = join(SESSIONS_DIR, sanitiseJid(chatJid));
     mkdirSync(chatSessionDir, { recursive: true });
     return chatSessionDir;
-}
-function resolveBuiltInExtensions() {
-    const currentDir = dirname(fileURLToPath(import.meta.url));
-    const rootDir = resolve(currentDir, "..", "..");
-    const extensionPath = join(rootDir, "extensions", "model-control.ts");
-    return existsSync(extensionPath) ? [extensionPath] : [];
 }
 export async function createDefaultSession(chatJid, options) {
     const chatSessionDir = ensureSessionDir(chatJid);
@@ -20,7 +14,7 @@ export async function createDefaultSession(chatJid, options) {
         cwd: WORKSPACE_DIR,
         agentDir: getAgentDir(),
         settingsManager: options.settingsManager,
-        additionalExtensionPaths: resolveBuiltInExtensions(),
+        extensionFactories: builtinExtensionFactories,
     });
     await resourceLoader.reload();
     const { session } = await createAgentSession({

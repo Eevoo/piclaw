@@ -56,7 +56,7 @@ export async function handleModel(session, modelRegistry, command) {
         }
         selected = matches[0];
     }
-    const previousModel = session.model;
+    const _previousModel = session.model;
     try {
         await session.setModel(selected);
     }
@@ -103,7 +103,7 @@ export async function handleThinking(session, _modelRegistry, command) {
             message: `Unknown thinking level: ${command.level}. Available: ${available}.`,
         };
     }
-    const previousLevel = session.thinkingLevel;
+    const _previousLevel = session.thinkingLevel;
     session.setThinkingLevel(requestedRaw);
     const applied = session.thinkingLevel;
     if (!session.supportsThinking()) {

@@ -1,4 +1,8 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+/**
+ * scheduled-tasks – registers /tasks and /scheduled commands that query
+ * the SQLite scheduled_tasks table.
+ */
+import type { ExtensionAPI, ExtensionFactory } from "@mariozechner/pi-coding-agent";
 import Database from "bun:sqlite";
 import { join } from "path";
 
@@ -36,23 +40,30 @@ function formatTask(row: ScheduledTaskRow): string {
 function listTasks(filter: string | null): { summary: string; lines: string[] } {
   const db = new Database(getDbPath(), { readonly: true });
   try {
-    const counts = db.query("SELECT status, COUNT(*) as count FROM scheduled_tasks GROUP BY status").all() as Array<{ status: string; count: number }>;
+    const counts = db
+      .query("SELECT status, COUNT(*) as count FROM scheduled_tasks GROUP BY status")
+      .all() as Array<{ status: string; count: number }>;
     const countMap = new Map(counts.map((row) => [row.status, row.count]));
 
     let rows: ScheduledTaskRow[];
     if (filter && STATUS_VALUES.has(filter)) {
-      rows = db.query(
-        "SELECT id, chat_jid, prompt, schedule_type, schedule_value, next_run, status, created_at FROM scheduled_tasks WHERE status = ? ORDER BY next_run"
-      ).all(filter) as ScheduledTaskRow[];
+      rows = db
+        .query(
+          "SELECT id, chat_jid, prompt, schedule_type, schedule_value, next_run, status, created_at FROM scheduled_tasks WHERE status = ? ORDER BY next_run"
+        )
+        .all(filter) as ScheduledTaskRow[];
     } else {
-      rows = db.query(
-        "SELECT id, chat_jid, prompt, schedule_type, schedule_value, next_run, status, created_at FROM scheduled_tasks ORDER BY created_at"
-      ).all() as ScheduledTaskRow[];
+      rows = db
+        .query(
+          "SELECT id, chat_jid, prompt, schedule_type, schedule_value, next_run, status, created_at FROM scheduled_tasks ORDER BY created_at"
+        )
+        .all() as ScheduledTaskRow[];
     }
 
-    const header = filter && STATUS_VALUES.has(filter)
-      ? `Scheduled tasks (${filter})`
-      : "Scheduled tasks";
+    const header =
+      filter && STATUS_VALUES.has(filter)
+        ? `Scheduled tasks (${filter})`
+        : "Scheduled tasks";
     const summary = `Active ${countMap.get("active") ?? 0} • Paused ${countMap.get("paused") ?? 0} • Completed ${countMap.get("completed") ?? 0}`;
 
     return {
@@ -64,7 +75,7 @@ function listTasks(filter: string | null): { summary: string; lines: string[] } 
   }
 }
 
-export default function (pi: ExtensionAPI) {
+export const scheduledTasks: ExtensionFactory = (pi: ExtensionAPI) => {
   const handler = async (args: string) => {
     const token = (args || "").trim().toLowerCase();
     const filter = token === "all" || token === "" ? null : token;
@@ -90,4 +101,4 @@ export default function (pi: ExtensionAPI) {
     description: "Alias for /tasks",
     handler,
   });
-}
+};
