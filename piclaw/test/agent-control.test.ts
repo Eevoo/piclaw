@@ -91,6 +91,16 @@ test("parseControlCommand parses model and thinking commands", () => {
   const labelCmd = parseControlCommand("/label abc123 milestone");
   expect(labelCmd?.type).toBe("label");
   expect(labelCmd && "label" in labelCmd ? labelCmd.label : null).toBe("milestone");
+
+  const agentNameCmd = parseControlCommand("/agent-name Pi");
+  expect(agentNameCmd?.type).toBe("agent_name");
+  expect(agentNameCmd && "name" in agentNameCmd ? agentNameCmd.name : null).toBe("Pi");
+
+  const agentAvatarCmd = parseControlCommand("/agent-avatar https://example.com/avatar.png");
+  expect(agentAvatarCmd?.type).toBe("agent_avatar");
+  expect(agentAvatarCmd && "avatar" in agentAvatarCmd ? agentAvatarCmd.avatar : null).toBe(
+    "https://example.com/avatar.png"
+  );
 });
 
 test("applyControlCommand switches model and thinking level", async () => {

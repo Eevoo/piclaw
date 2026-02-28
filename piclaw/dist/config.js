@@ -1,7 +1,16 @@
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import { readEnvFile } from "./env.js";
-const envConfig = readEnvFile(["ASSISTANT_NAME", "PUSHOVER_APP_TOKEN", "PUSHOVER_USER_KEY", "PUSHOVER_DEVICE", "PUSHOVER_PRIORITY", "PUSHOVER_SOUND", "WHATSAPP_PHONE"]);
+const envConfig = readEnvFile([
+    "ASSISTANT_NAME",
+    "ASSISTANT_AVATAR",
+    "PUSHOVER_APP_TOKEN",
+    "PUSHOVER_USER_KEY",
+    "PUSHOVER_DEVICE",
+    "PUSHOVER_PRIORITY",
+    "PUSHOVER_SOUND",
+    "WHATSAPP_PHONE",
+]);
 function readJsonConfig(filePath) {
     try {
         const raw = readFileSync(filePath, "utf-8");
@@ -36,7 +45,6 @@ function pickNumber(config, keys) {
     }
     return undefined;
 }
-export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || "PiClaw";
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 // All paths are env-configurable so they work with any volume layout.
@@ -44,10 +52,13 @@ export const SCHEDULER_POLL_INTERVAL = 60000;
 export const WORKSPACE_DIR = resolve(process.env.PICLAW_WORKSPACE || "/workspace");
 export const STORE_DIR = resolve(process.env.PICLAW_STORE || `${WORKSPACE_DIR}/.piclaw/store`);
 export const DATA_DIR = resolve(process.env.PICLAW_DATA || `${WORKSPACE_DIR}/.piclaw/data`);
-const PICLAW_CONFIG_PATH = resolve(WORKSPACE_DIR, ".piclaw", "config.json");
+export const PICLAW_CONFIG_PATH = resolve(WORKSPACE_DIR, ".piclaw", "config.json");
 const piclawConfig = readJsonConfig(PICLAW_CONFIG_PATH);
 const pushoverConfig = piclawConfig.pushover && typeof piclawConfig.pushover === "object"
     ? piclawConfig.pushover
+    : piclawConfig;
+const assistantConfig = piclawConfig.assistant && typeof piclawConfig.assistant === "object"
+    ? piclawConfig.assistant
     : piclawConfig;
 const configAppToken = pickString(pushoverConfig, ["appToken", "app_token", "PUSHOVER_APP_TOKEN"]);
 const configUserKey = pickString(pushoverConfig, ["userKey", "user_key", "PUSHOVER_USER_KEY"]);
@@ -55,6 +66,24 @@ const configDevice = pickString(pushoverConfig, ["device", "PUSHOVER_DEVICE"]);
 const configSound = pickString(pushoverConfig, ["sound", "PUSHOVER_SOUND"]);
 const configPriority = pickNumber(pushoverConfig, ["priority", "PUSHOVER_PRIORITY"]);
 const configWhatsappPhone = pickString(piclawConfig, ["whatsappPhone", "whatsapp_phone", "WHATSAPP_PHONE"]);
+const configAssistantName = pickString(assistantConfig, [
+    "assistantName",
+    "assistant_name",
+    "agentName",
+    "agent_name",
+    "name",
+    "ASSISTANT_NAME",
+]);
+const configAssistantAvatar = pickString(assistantConfig, [
+    "assistantAvatar",
+    "assistant_avatar",
+    "agentAvatar",
+    "agent_avatar",
+    "avatar",
+    "ASSISTANT_AVATAR",
+]);
+export let ASSISTANT_NAME = process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || configAssistantName || "PiClaw";
+export let ASSISTANT_AVATAR = process.env.ASSISTANT_AVATAR || envConfig.ASSISTANT_AVATAR || configAssistantAvatar || "";
 export const AGENT_TIMEOUT = parseInt(process.env.AGENT_TIMEOUT || "600000", 10); // 10min default
 export const IPC_POLL_INTERVAL = 1000;
 const CLI_ARGS = process.argv.slice(2);
@@ -91,8 +120,15 @@ export const SESSIONS_DIR = resolve(DATA_DIR, "sessions");
 function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-export const TRIGGER_PATTERN = new RegExp(`(?:^|\\s)@${escapeRegex(ASSISTANT_NAME)}\\b`, "i");
+export let TRIGGER_PATTERN = new RegExp(`(?:^|\\s)@${escapeRegex(ASSISTANT_NAME)}\\b`, "i");
 export const TIMEZONE = process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+export function setAssistantName(name) {
+    ASSISTANT_NAME = name.trim() || "PiClaw";
+    TRIGGER_PATTERN = new RegExp(`(?:^|\\s)@${escapeRegex(ASSISTANT_NAME)}\\b`, "i");
+}
+export function setAssistantAvatar(avatar) {
+    ASSISTANT_AVATAR = avatar.trim();
+}
 export const TOOL_OUTPUT_RETENTION_DAYS = parseInt(process.env.PICLAW_TOOL_OUTPUT_RETENTION_DAYS || "7", 10);
 export const TOOL_OUTPUT_CLEANUP_INTERVAL_MS = parseInt(process.env.PICLAW_TOOL_OUTPUT_CLEANUP_INTERVAL_MS || String(12 * 60 * 60 * 1000), 10);
 export const WHATSAPP_PHONE = process.env.WHATSAPP_PHONE || envConfig.WHATSAPP_PHONE || configWhatsappPhone || "";

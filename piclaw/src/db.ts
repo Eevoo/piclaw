@@ -186,9 +186,16 @@ export function storeMessage(msg: NewMessage): number {
   return row?.rowid ?? 0;
 }
 
+export interface InteractionContentMeta {
+  truncated: boolean;
+  original_length: number;
+  max_length: number;
+}
+
 export interface InteractionData {
   type: "user_message" | "agent_response" | "agent_request" | "agent_draft" | string;
   content: string;
+  content_meta?: InteractionContentMeta;
   agent_id?: string;
   thread_id?: number | null;
   media_ids?: number[];
@@ -222,13 +229,35 @@ interface StoredMessageRow {
   is_bot_message: number;
 }
 
+const DEFAULT_WEB_CONTENT_MAX_CHARS = 65_536;
+const WEB_CONTENT_MAX_CHARS = (() => {
+  const raw = Number.parseInt(process.env.PICLAW_WEB_MAX_CONTENT_CHARS || "", 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_WEB_CONTENT_MAX_CHARS;
+})();
+
+export function clampWebContent(content: string): { content: string; meta?: InteractionContentMeta } {
+  const safeContent = typeof content === "string" ? content : String(content ?? "");
+  const length = safeContent.length;
+  if (length <= WEB_CONTENT_MAX_CHARS) return { content: safeContent };
+  return {
+    content: "",
+    meta: {
+      truncated: true,
+      original_length: length,
+      max_length: WEB_CONTENT_MAX_CHARS,
+    },
+  };
+}
+
 function buildInteraction(row: StoredMessageRow, mediaIds: number[] = []): InteractionRow {
+  const { content, meta } = clampWebContent(row.content);
   return {
     id: row.rowid,
     timestamp: row.timestamp,
     data: {
       type: row.is_bot_message ? "agent_response" : "user_message",
-      content: row.content,
+      content,
+      content_meta: meta,
       agent_id: "default",
       media_ids: mediaIds,
     },

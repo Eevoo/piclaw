@@ -57,7 +57,7 @@ test("token chart outputs chart first and summary lines", () => {
   const todayLine = lines.find((line) => line.includes(formatDay(now)));
   const yesterdayLine = lines.find((line) => line.includes(formatDay(yesterday)));
 
-  expect(todayLine).toContain("1,800 tokens");
+  expect(todayLine).toContain("1.8K tokens");
   expect(yesterdayLine).toContain("650 tokens");
   expect(todayLine).toContain("cached 300");
   expect(yesterdayLine).toContain("cached 150");

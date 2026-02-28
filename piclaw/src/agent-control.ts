@@ -1,7 +1,9 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import type { AgentSession, ModelRegistry } from "@mariozechner/pi-coding-agent";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname } from "path";
+import { ASSISTANT_AVATAR, ASSISTANT_NAME, PICLAW_CONFIG_PATH, setAssistantAvatar, setAssistantName } from "./config.js";
 import { createTrackedBashOperations } from "./tools/tracked-bash.js";
 import { killTrackedProcesses } from "./process-tracker.js";
 
@@ -143,6 +145,8 @@ export type AgentControlCommand =
       customInstructions?: string;
       replaceInstructions?: boolean;
       label?: string;
+      limit?: number;
+      all?: boolean;
       raw: string;
     }
   | {
@@ -153,6 +157,16 @@ export type AgentControlCommand =
     }
   | {
       type: "labels";
+      raw: string;
+    }
+  | {
+      type: "agent_name";
+      name?: string;
+      raw: string;
+    }
+  | {
+      type: "agent_avatar";
+      avatar?: string;
       raw: string;
     };
 
@@ -278,6 +292,8 @@ function parseTreeArgs(args: string): {
   customInstructions?: string;
   replaceInstructions?: boolean;
   label?: string;
+  limit?: number;
+  all?: boolean;
 } {
   const tokens = splitArgs(args);
   let targetId: string | undefined;
@@ -285,6 +301,8 @@ function parseTreeArgs(args: string): {
   let customInstructions: string | undefined;
   let replaceInstructions = false;
   let label: string | undefined;
+  let limit: number | undefined;
+  let all = false;
 
   let i = 0;
   while (i < tokens.length) {
@@ -330,12 +348,109 @@ function parseTreeArgs(args: string): {
       i += 1;
       continue;
     }
+    if (token === "--all") {
+      all = true;
+      i += 1;
+      continue;
+    }
+    if (token === "--limit") {
+      const next = tokens[i + 1];
+      if (next && !next.startsWith("--")) {
+        const parsed = parseInt(next, 10);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          limit = parsed;
+        }
+        i += 2;
+      } else {
+        i += 1;
+      }
+      continue;
+    }
+    if (token.startsWith("--limit=")) {
+      const raw = token.slice("--limit=".length);
+      const parsed = parseInt(raw, 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        limit = parsed;
+      }
+      i += 1;
+      continue;
+    }
     i += 1;
   }
 
   if (customInstructions) summarize = true;
 
-  return { targetId, summarize, customInstructions, replaceInstructions, label };
+  return { targetId, summarize, customInstructions, replaceInstructions, label, limit, all };
+}
+
+function readPiclawConfig(): Record<string, unknown> {
+  try {
+    const raw = readFileSync(PICLAW_CONFIG_PATH, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function writePiclawConfig(config: Record<string, unknown>): void {
+  mkdirSync(dirname(PICLAW_CONFIG_PATH), { recursive: true });
+  const next = JSON.stringify(config, null, 2);
+  writeFileSync(PICLAW_CONFIG_PATH, `${next}\n`, "utf-8");
+}
+
+function updateAssistantConfig(patch: { name?: string | null; avatar?: string | null }): {
+  name?: string;
+  avatar?: string;
+} {
+  const config = readPiclawConfig();
+  const assistant =
+    config.assistant && typeof config.assistant === "object"
+      ? { ...(config.assistant as Record<string, unknown>) }
+      : {};
+  const nameKeys = ["assistantName", "assistant_name", "agentName", "agent_name", "name", "ASSISTANT_NAME"];
+  const avatarKeys = [
+    "assistantAvatar",
+    "assistant_avatar",
+    "agentAvatar",
+    "agent_avatar",
+    "avatar",
+    "ASSISTANT_AVATAR",
+  ];
+
+  const clearKeys = (keys: string[]) => {
+    for (const key of keys) {
+      if (key in assistant) delete assistant[key];
+    }
+  };
+
+  if (patch.name !== undefined) {
+    clearKeys(nameKeys);
+    if (patch.name !== null) {
+      assistant.assistantName = patch.name;
+    }
+  }
+
+  if (patch.avatar !== undefined) {
+    clearKeys(avatarKeys);
+    if (patch.avatar !== null) {
+      assistant.assistantAvatar = patch.avatar;
+    }
+  }
+
+  if (Object.keys(assistant).length > 0) {
+    config.assistant = assistant;
+  } else {
+    delete config.assistant;
+  }
+
+  writePiclawConfig(config);
+
+  return {
+    name: typeof assistant.assistantName === "string" ? assistant.assistantName : undefined,
+    avatar: typeof assistant.assistantAvatar === "string" ? assistant.assistantAvatar : undefined,
+  };
 }
 
 async function runPromptAndCapture(session: AgentSession, text: string): Promise<string> {
@@ -616,6 +731,8 @@ export function parseControlCommand(text: string, triggerPattern?: RegExp): Agen
       customInstructions: parsed.customInstructions,
       replaceInstructions: parsed.replaceInstructions,
       label: parsed.label,
+      limit: parsed.limit,
+      all: parsed.all,
       raw: cleaned,
     };
   }
@@ -634,6 +751,22 @@ export function parseControlCommand(text: string, triggerPattern?: RegExp): Agen
 
   if (commandLower === "/labels") {
     return { type: "labels", raw: cleaned };
+  }
+
+  if (commandLower === "/agent-name") {
+    return {
+      type: "agent_name",
+      name: args || undefined,
+      raw: cleaned,
+    };
+  }
+
+  if (commandLower === "/agent-avatar") {
+    return {
+      type: "agent_avatar",
+      avatar: args || undefined,
+      raw: cleaned,
+    };
   }
 
   return null;
@@ -1134,19 +1267,39 @@ export async function applyControlCommand(
       };
 
       const lines: string[] = ["Session tree:"];
+      const maxEntries = command.all ? Number.POSITIVE_INFINITY : (command.limit ?? 10);
+      let count = 0;
+      let truncated = false;
 
       const walk = (node: any, depth: number) => {
+        if (count >= maxEntries) {
+          truncated = true;
+          return;
+        }
         const indent = "  ".repeat(depth);
         const label = node.label ? ` [${node.label}]` : "";
         const active = node.entry.id === leafId ? " ← active" : "";
         lines.push(`${indent}• ${node.entry.id} ${describeEntry(node.entry)}${label}${active}`);
+        count += 1;
         for (const child of node.children || []) {
           walk(child, depth + 1);
+          if (count >= maxEntries) {
+            truncated = true;
+            return;
+          }
         }
       };
 
       for (const root of roots) {
         walk(root, 0);
+        if (count >= maxEntries) {
+          truncated = true;
+          break;
+        }
+      }
+
+      if (truncated) {
+        lines.push(`… truncated at ${maxEntries} entries. Use /tree --all or /tree --limit N to view more.`);
       }
 
       lines.push("Use /tree <entryId> to navigate. Add --summarize or --summary \"...\" for branch summaries.");
@@ -1186,8 +1339,7 @@ export async function applyControlCommand(
       return { status: "error", message: "Usage: /label <entryId> <label|clear>" };
     }
     const rawLabel = command.label?.trim();
-    const normalized = rawLabel?.toLowerCase();
-    const label = !rawLabel || ["clear", "none", "off"].includes(normalized) ? undefined : rawLabel;
+    const label = rawLabel && !["clear", "none", "off"].includes(rawLabel.toLowerCase()) ? rawLabel : "";
     session.sessionManager.appendLabelChange(command.targetId.trim(), label);
     return {
       status: "success",
@@ -1226,6 +1378,45 @@ export async function applyControlCommand(
 
     const lines = ["Labels:", ...labels.map((item) => `• ${item.id} [${item.label}] ${item.summary}`)];
     return { status: "success", message: lines.join("\n") };
+  }
+
+  if (command.type === "agent_name") {
+    if (!command.name) {
+      return { status: "success", message: `Agent name: ${ASSISTANT_NAME}` };
+    }
+
+    const trimmed = command.name.trim();
+    const normalized = trimmed.toLowerCase();
+    const nextName = ["clear", "none", "off", "default"].includes(normalized) ? null : trimmed;
+    const updated = updateAssistantConfig({ name: nextName });
+    const fallback = process.env.ASSISTANT_NAME || "PiClaw";
+    const effective = updated.name || fallback;
+    setAssistantName(effective);
+
+    return {
+      status: "success",
+      message: nextName ? `Agent name set to ${effective}.` : `Agent name reset to ${effective}.`,
+    };
+  }
+
+  if (command.type === "agent_avatar") {
+    if (!command.avatar) {
+      const current = ASSISTANT_AVATAR || "(default)";
+      return { status: "success", message: `Agent avatar: ${current}` };
+    }
+
+    const trimmed = command.avatar.trim();
+    const normalized = trimmed.toLowerCase();
+    const nextAvatar = ["clear", "none", "off", "default"].includes(normalized) ? null : trimmed;
+    const updated = updateAssistantConfig({ avatar: nextAvatar });
+    const fallback = process.env.ASSISTANT_AVATAR || "";
+    const effective = updated.avatar || fallback;
+    setAssistantAvatar(effective);
+
+    return {
+      status: "success",
+      message: nextAvatar ? `Agent avatar set to ${effective || "(default)"}.` : "Agent avatar reset to default.",
+    };
   }
 
   if (command.type === "model") {
@@ -1359,9 +1550,11 @@ export async function applyControlCommand(
     addLine("/switch-session", "Switch to a session file");
     addLine("/fork", "Fork from a previous message");
     addLine("/forks", "List forkable messages");
-    addLine("/tree", "List the session tree and navigate branches");
+    addLine("/tree", "List the session tree (default 10 entries) and navigate branches");
     addLine("/label", "Set or clear a label on a tree entry");
     addLine("/labels", "List labeled entries");
+    addLine("/agent-name", "Set or show the agent display name");
+    addLine("/agent-avatar", "Set or show the agent avatar URL");
     addLine("/export-html", "Export session to HTML");
     addLine("/restart", "Restart the agent and stop subprocesses");
     addLine("/commands", "List available commands");

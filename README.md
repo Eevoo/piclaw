@@ -45,7 +45,7 @@ Piclaw ships with a built-in web UI (Vibes-inspired). Once the container is up, 
 http://localhost:8080
 ```
 
-Set `PICLAW_WEB_PORT` or `PICLAW_WEB_HOST` to change where it listens. Use `PICLAW_WEB_IDLE_TIMEOUT` (seconds, `0` disables) to drop idle web clients. CLI overrides are also available: `piclaw --port`, `--host`, `--idle-timeout`.
+Set `PICLAW_WEB_PORT` or `PICLAW_WEB_HOST` to change where it listens. Use `PICLAW_WEB_IDLE_TIMEOUT` (seconds, `0` disables) to drop idle web clients. Use `PICLAW_WEB_MAX_CONTENT_CHARS` (default 65,536) to cap text payloads; oversized messages render as a placeholder with length metadata instead of full content. CLI overrides are also available: `piclaw --port`, `--host`, `--idle-timeout`.
 
 ## Volumes & Persistence
 
@@ -263,9 +263,11 @@ Piclaw supports direct control commands (no LLM round‑trip) in chat. Key comma
 | `/switch-session <path>` | Switch to another session file |
 | `/fork <entryId>` | Fork from a previous message |
 | `/forks` | List forkable messages |
-| `/tree [entryId] [--summarize|--summary "..."]` | List or navigate the session tree |
+| `/tree [entryId] [--summarize|--summary "..."] [--limit N|--all]` | List or navigate the session tree (default shows 10 entries) |
 | `/label <entryId> <label|clear>` | Set or clear a label |
 | `/labels` | List labeled entries |
+| `/agent-name <name|clear>` | Set or show the agent name (stored in .piclaw/config.json) |
+| `/agent-avatar <url|clear>` | Set or show the agent avatar URL (stored in .piclaw/config.json) |
 | `/export-html [path]` | Export session to HTML |
 | `/restart` | Restart the agent and stop subprocesses |
 | `/commands` | List available commands |

@@ -156,13 +156,34 @@ export function storeMessage(msg) {
         .get(msg.id, msg.chat_jid);
     return row?.rowid ?? 0;
 }
+const DEFAULT_WEB_CONTENT_MAX_CHARS = 65_536;
+const WEB_CONTENT_MAX_CHARS = (() => {
+    const raw = Number.parseInt(process.env.PICLAW_WEB_MAX_CONTENT_CHARS || "", 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_WEB_CONTENT_MAX_CHARS;
+})();
+export function clampWebContent(content) {
+    const safeContent = typeof content === "string" ? content : String(content ?? "");
+    const length = safeContent.length;
+    if (length <= WEB_CONTENT_MAX_CHARS)
+        return { content: safeContent };
+    return {
+        content: "",
+        meta: {
+            truncated: true,
+            original_length: length,
+            max_length: WEB_CONTENT_MAX_CHARS,
+        },
+    };
+}
 function buildInteraction(row, mediaIds = []) {
+    const { content, meta } = clampWebContent(row.content);
     return {
         id: row.rowid,
         timestamp: row.timestamp,
         data: {
             type: row.is_bot_message ? "agent_response" : "user_message",
-            content: row.content,
+            content,
+            content_meta: meta,
             agent_id: "default",
             media_ids: mediaIds,
         },

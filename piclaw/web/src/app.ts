@@ -357,6 +357,11 @@ function formatTime(timestamp) {
     return date.toLocaleDateString();
 }
 
+function formatCount(value) {
+    if (!Number.isFinite(value)) return '0';
+    return Math.round(value).toLocaleString();
+}
+
 /**
  * Detect iOS devices for layout adjustments.
  */
@@ -384,7 +389,7 @@ function useTimestampRefresh(intervalMs = 30000) {
  * Get avatar letter and color from name
  * Returns object with { letter, color }
  */
-function getAvatarInfo(name) {
+function getAvatarInfo(name, avatarUrl) {
     const resolvedName = name || DEFAULT_AGENT_NAME;
     const letter = resolvedName.charAt(0).toUpperCase();
     
@@ -422,7 +427,9 @@ function getAvatarInfo(name) {
     const index = letter.charCodeAt(0) % colors.length;
     const color = colors[index];
     const normalized = resolvedName.trim().toLowerCase();
-    const image = (normalized === DEFAULT_AGENT_NAME.toLowerCase() || normalized === 'pi') ? AGENT_AVATAR_URL : null;
+    const normalizedAvatar = typeof avatarUrl === 'string' ? avatarUrl.trim() : '';
+    const customImage = normalizedAvatar ? normalizedAvatar : null;
+    const image = customImage || ((normalized === DEFAULT_AGENT_NAME.toLowerCase() || normalized === 'pi') ? AGENT_AVATAR_URL : null);
     
     return { letter, color, image };
 }
@@ -431,6 +438,12 @@ function getAgentName(agentId, agents) {
     if (!agentId) return DEFAULT_AGENT_NAME;
     const name = agents[agentId]?.name || agentId;
     return name ? name.charAt(0).toUpperCase() + name.slice(1) : DEFAULT_AGENT_NAME;
+}
+
+function getAgentAvatarUrl(agentId, agents) {
+    if (!agentId) return null;
+    const agent = agents[agentId] || {};
+    return agent.avatar_url || agent.avatarUrl || agent.avatar || null;
 }
 
 function getTurnColor(turnId) {
@@ -797,7 +810,7 @@ function removePreviewedUrls(text, linkPreviews) {
 /**
  * Single post component
  */
-function Post({ post, onClick, onHashtagClick, agentName, onDelete }) {
+function Post({ post, onClick, onHashtagClick, agentName, agentAvatarUrl, onDelete }) {
     const [zoomedImage, setZoomedImage] = useState(null);
     const contentRef = useRef(null);
     
@@ -806,10 +819,22 @@ function Post({ post, onClick, onHashtagClick, agentName, onDelete }) {
     const displayName = isAgent ? (agentName || DEFAULT_AGENT_NAME) : 'You';
     
     // Get avatar info based on the name
-    const avatarInfo = isAgent ? getAvatarInfo(agentName) : getAvatarInfo('You');
+    const avatarInfo = isAgent ? getAvatarInfo(agentName, agentAvatarUrl) : getAvatarInfo('You');
     
+    const contentMeta = data.content_meta;
+    const isTruncated = Boolean(contentMeta?.truncated);
+    const truncatedInfo = isTruncated
+        ? {
+            originalLength: Number.isFinite(contentMeta?.original_length)
+                ? contentMeta.original_length
+                : (data.content ? data.content.length : 0),
+            maxLength: Number.isFinite(contentMeta?.max_length) ? contentMeta.max_length : 0,
+        }
+        : null;
+
     // Remove URLs that have previews from the displayed content
     let displayContent = removePreviewedUrls(data.content, data.link_previews);
+    const shouldRenderContent = Boolean(displayContent) && !isTruncated;
 
     const handleImageClick = (e, mediaId) => {
         e.stopPropagation();
@@ -915,7 +940,16 @@ function Post({ post, onClick, onHashtagClick, agentName, onDelete }) {
                     <span class="post-author">${displayName}</span>
                     <span class="post-time">${formatTime(post.timestamp)}</span>
                 </div>
-                ${displayContent && html`
+                ${isTruncated && truncatedInfo && html`
+                    <div class="post-content truncated">
+                        <div class="truncated-title">Message too large to display.</div>
+                        <div class="truncated-meta">
+                            Original length: ${formatCount(truncatedInfo.originalLength)} chars
+                            ${truncatedInfo.maxLength ? html` • Display limit: ${formatCount(truncatedInfo.maxLength)} chars` : ''}
+                        </div>
+                    </div>
+                `}
+                ${shouldRenderContent && html`
                     <div 
                         ref=${contentRef}
                         class="post-content"
@@ -1090,6 +1124,7 @@ function Timeline({ posts, hasMore, onLoadMore, onPostClick, onHashtagClick, emp
                         key=${post.id}
                         post=${post}
                         agentName=${getAgentName(post.data?.agent_id, agents)}
+                        agentAvatarUrl=${getAgentAvatarUrl(post.data?.agent_id, agents)}
                         onClick=${() => onPostClick?.(post)}
                         onHashtagClick=${onHashtagClick}
                         onDelete=${onDeletePost}
@@ -1718,6 +1753,41 @@ function App() {
     const handleSseEvent = useCallback((eventType, data) => {
         const turnId = data?.turn_id;
 
+        const updateAgentProfile = (payload) => {
+            if (!payload || typeof payload !== 'object') return;
+            const agentId = payload.agent_id;
+            if (!agentId) return;
+            const nextName = payload.agent_name;
+            const nextAvatar = payload.agent_avatar;
+            if (!nextName && nextAvatar === undefined) return;
+
+            setAgents((prev) => {
+                const current = prev[agentId] || { id: agentId };
+                const updated = { ...current };
+                let changed = false;
+
+                if (nextName && nextName !== current.name) {
+                    updated.name = nextName;
+                    changed = true;
+                }
+
+                if (nextAvatar !== undefined) {
+                    const normalizedAvatar = typeof nextAvatar === 'string' ? nextAvatar.trim() : null;
+                    const currentAvatar = current.avatar_url ?? current.avatarUrl ?? current.avatar;
+                    const normalizedCurrent = typeof currentAvatar === 'string' ? currentAvatar.trim() : null;
+                    if (normalizedAvatar !== normalizedCurrent) {
+                        updated.avatar_url = normalizedAvatar || null;
+                        changed = true;
+                    }
+                }
+
+                if (!changed) return prev;
+                return { ...prev, [agentId]: updated };
+            });
+        };
+
+        updateAgentProfile(data);
+
         // Handle agent status updates
         if (eventType === 'connected') {
             setAgentStatus(null);
@@ -1870,7 +1940,7 @@ function App() {
                 }
             }
         }
-    }, [clearAgentRunState, noteAgentActivity, removeStalledPost, setActiveTurn]);
+    }, [clearAgentRunState, noteAgentActivity, removeStalledPost, setActiveTurn, setAgents]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;

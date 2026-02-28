@@ -1,4 +1,6 @@
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname } from "path";
+import { ASSISTANT_AVATAR, ASSISTANT_NAME, PICLAW_CONFIG_PATH, setAssistantAvatar, setAssistantName } from "./config.js";
 import { createTrackedBashOperations } from "./tools/tracked-bash.js";
 import { killTrackedProcesses } from "./process-tracker.js";
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -87,6 +89,188 @@ function extractTextFromContent(content) {
             .join("");
     }
     return "";
+}
+function splitArgs(input) {
+    const result = [];
+    let current = "";
+    let quote = "";
+    for (let i = 0; i < input.length; i += 1) {
+        const char = input[i];
+        if (quote) {
+            if (char === quote) {
+                quote = "";
+            }
+            else {
+                current += char;
+            }
+            continue;
+        }
+        if (char === '"' || char === "'") {
+            quote = char;
+            continue;
+        }
+        if (char === " " || char === "\t" || char === "\n") {
+            if (current) {
+                result.push(current);
+                current = "";
+            }
+            continue;
+        }
+        current += char;
+    }
+    if (current)
+        result.push(current);
+    return result;
+}
+function parseTreeArgs(args) {
+    const tokens = splitArgs(args);
+    let targetId;
+    let summarize = false;
+    let customInstructions;
+    let replaceInstructions = false;
+    let label;
+    let limit;
+    let all = false;
+    let i = 0;
+    while (i < tokens.length) {
+        const token = tokens[i];
+        if (!token.startsWith("--") && !targetId) {
+            targetId = token;
+            i += 1;
+            continue;
+        }
+        if (token === "--summarize") {
+            summarize = true;
+            i += 1;
+            continue;
+        }
+        if (token === "--summary") {
+            summarize = true;
+            const next = tokens[i + 1];
+            if (next && !next.startsWith("--")) {
+                customInstructions = next;
+                i += 2;
+            }
+            else {
+                i += 1;
+            }
+            continue;
+        }
+        if (token === "--replace") {
+            replaceInstructions = true;
+            i += 1;
+            continue;
+        }
+        if (token === "--label") {
+            const next = tokens[i + 1];
+            if (next && !next.startsWith("--")) {
+                label = next;
+                i += 2;
+            }
+            else {
+                i += 1;
+            }
+            continue;
+        }
+        if (token.startsWith("--label=")) {
+            label = token.slice("--label=".length);
+            i += 1;
+            continue;
+        }
+        if (token === "--all") {
+            all = true;
+            i += 1;
+            continue;
+        }
+        if (token === "--limit") {
+            const next = tokens[i + 1];
+            if (next && !next.startsWith("--")) {
+                const parsed = parseInt(next, 10);
+                if (!Number.isNaN(parsed) && parsed > 0) {
+                    limit = parsed;
+                }
+                i += 2;
+            }
+            else {
+                i += 1;
+            }
+            continue;
+        }
+        if (token.startsWith("--limit=")) {
+            const raw = token.slice("--limit=".length);
+            const parsed = parseInt(raw, 10);
+            if (!Number.isNaN(parsed) && parsed > 0) {
+                limit = parsed;
+            }
+            i += 1;
+            continue;
+        }
+        i += 1;
+    }
+    if (customInstructions)
+        summarize = true;
+    return { targetId, summarize, customInstructions, replaceInstructions, label, limit, all };
+}
+function readPiclawConfig() {
+    try {
+        const raw = readFileSync(PICLAW_CONFIG_PATH, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object")
+            return parsed;
+    }
+    catch {
+        // ignore
+    }
+    return {};
+}
+function writePiclawConfig(config) {
+    mkdirSync(dirname(PICLAW_CONFIG_PATH), { recursive: true });
+    const next = JSON.stringify(config, null, 2);
+    writeFileSync(PICLAW_CONFIG_PATH, `${next}\n`, "utf-8");
+}
+function updateAssistantConfig(patch) {
+    const config = readPiclawConfig();
+    const assistant = config.assistant && typeof config.assistant === "object"
+        ? { ...config.assistant }
+        : {};
+    const nameKeys = ["assistantName", "assistant_name", "agentName", "agent_name", "name", "ASSISTANT_NAME"];
+    const avatarKeys = [
+        "assistantAvatar",
+        "assistant_avatar",
+        "agentAvatar",
+        "agent_avatar",
+        "avatar",
+        "ASSISTANT_AVATAR",
+    ];
+    const clearKeys = (keys) => {
+        for (const key of keys) {
+            if (key in assistant)
+                delete assistant[key];
+        }
+    };
+    if (patch.name !== undefined) {
+        clearKeys(nameKeys);
+        if (patch.name !== null) {
+            assistant.assistantName = patch.name;
+        }
+    }
+    if (patch.avatar !== undefined) {
+        clearKeys(avatarKeys);
+        if (patch.avatar !== null) {
+            assistant.assistantAvatar = patch.avatar;
+        }
+    }
+    if (Object.keys(assistant).length > 0) {
+        config.assistant = assistant;
+    }
+    else {
+        delete config.assistant;
+    }
+    writePiclawConfig(config);
+    return {
+        name: typeof assistant.assistantName === "string" ? assistant.assistantName : undefined,
+        avatar: typeof assistant.assistantAvatar === "string" ? assistant.assistantAvatar : undefined,
+    };
 }
 async function runPromptAndCapture(session, text) {
     let assistantBuffer = "";
@@ -320,6 +504,48 @@ export function parseControlCommand(text, triggerPattern) {
         return {
             type: "bash",
             command: args || undefined,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/tree") {
+        const parsed = parseTreeArgs(args);
+        return {
+            type: "tree",
+            targetId: parsed.targetId,
+            summarize: parsed.summarize,
+            customInstructions: parsed.customInstructions,
+            replaceInstructions: parsed.replaceInstructions,
+            label: parsed.label,
+            limit: parsed.limit,
+            all: parsed.all,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/label") {
+        const tokens = splitArgs(args);
+        const targetId = tokens[0];
+        const label = tokens.slice(1).join(" ").trim() || undefined;
+        return {
+            type: "label",
+            targetId: targetId || undefined,
+            label,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/labels") {
+        return { type: "labels", raw: cleaned };
+    }
+    if (commandLower === "/agent-name") {
+        return {
+            type: "agent_name",
+            name: args || undefined,
+            raw: cleaned,
+        };
+    }
+    if (commandLower === "/agent-avatar") {
+        return {
+            type: "agent_avatar",
+            avatar: args || undefined,
             raw: cleaned,
         };
     }
@@ -744,6 +970,189 @@ export async function applyControlCommand(session, modelRegistry, command) {
             return { status: "error", message };
         }
     }
+    if (command.type === "tree") {
+        const sessionManager = session.sessionManager;
+        const leafId = sessionManager.getLeafId();
+        if (!command.targetId) {
+            const roots = sessionManager.getTree();
+            if (roots.length === 0) {
+                return { status: "success", message: "Tree is empty." };
+            }
+            const describeEntry = (entry) => {
+                switch (entry.type) {
+                    case "message": {
+                        const msg = entry.message;
+                        const role = msg?.role || "message";
+                        if (role === "toolResult") {
+                            return `toolResult: ${msg.toolName || "tool"}`;
+                        }
+                        const text = extractTextFromContent(msg?.content);
+                        if (text) {
+                            return `${role}: "${truncateText(text, 80)}"`;
+                        }
+                        if (Array.isArray(msg?.content)) {
+                            const toolCall = msg.content.find((c) => c?.type === "toolCall");
+                            if (toolCall)
+                                return `${role}: [tool ${toolCall.name}]`;
+                        }
+                        return role;
+                    }
+                    case "compaction":
+                        return `[compaction: ${formatCompactNumber(entry.tokensBefore)} tokens]`;
+                    case "branch_summary":
+                        return `[branch summary from ${entry.fromId}]`;
+                    case "thinking_level_change":
+                        return `[thinking ${entry.thinkingLevel}]`;
+                    case "model_change":
+                        return `[model ${entry.provider}/${entry.modelId}]`;
+                    case "custom":
+                        return `[custom ${entry.customType}]`;
+                    case "custom_message":
+                        return `[custom message ${entry.customType}]`;
+                    case "label":
+                        return `[label ${entry.label || "clear"}]`;
+                    case "session_info":
+                        return `[session name ${entry.name || "none"}]`;
+                    default:
+                        return `[${entry.type}]`;
+                }
+            };
+            const lines = ["Session tree:"];
+            const maxEntries = command.all ? Number.POSITIVE_INFINITY : (command.limit ?? 10);
+            let count = 0;
+            let truncated = false;
+            const walk = (node, depth) => {
+                if (count >= maxEntries) {
+                    truncated = true;
+                    return;
+                }
+                const indent = "  ".repeat(depth);
+                const label = node.label ? ` [${node.label}]` : "";
+                const active = node.entry.id === leafId ? " ← active" : "";
+                lines.push(`${indent}• ${node.entry.id} ${describeEntry(node.entry)}${label}${active}`);
+                count += 1;
+                for (const child of node.children || []) {
+                    walk(child, depth + 1);
+                    if (count >= maxEntries) {
+                        truncated = true;
+                        return;
+                    }
+                }
+            };
+            for (const root of roots) {
+                walk(root, 0);
+                if (count >= maxEntries) {
+                    truncated = true;
+                    break;
+                }
+            }
+            if (truncated) {
+                lines.push(`… truncated at ${maxEntries} entries. Use /tree --all or /tree --limit N to view more.`);
+            }
+            lines.push("Use /tree <entryId> to navigate. Add --summarize or --summary \"...\" for branch summaries.");
+            return { status: "success", message: lines.join("\n") };
+        }
+        const options = {
+            summarize: command.summarize ?? false,
+            customInstructions: command.customInstructions,
+            replaceInstructions: command.replaceInstructions,
+            label: command.label,
+        };
+        try {
+            const result = await session.navigateTree(command.targetId, options);
+            if (result.cancelled) {
+                return { status: "error", message: "Tree navigation cancelled." };
+            }
+            if (result.aborted) {
+                return { status: "error", message: "Tree navigation aborted." };
+            }
+            if (result.editorText) {
+                return {
+                    status: "success",
+                    message: `Navigation complete. Selected text:\n${result.editorText}`,
+                };
+            }
+            return { status: "success", message: "Navigation complete." };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { status: "error", message };
+        }
+    }
+    if (command.type === "label") {
+        if (!command.targetId) {
+            return { status: "error", message: "Usage: /label <entryId> <label|clear>" };
+        }
+        const rawLabel = command.label?.trim();
+        const label = rawLabel && !["clear", "none", "off"].includes(rawLabel.toLowerCase()) ? rawLabel : "";
+        session.sessionManager.appendLabelChange(command.targetId.trim(), label);
+        return {
+            status: "success",
+            message: label ? `Label set on ${command.targetId}: ${label}` : `Label cleared on ${command.targetId}.`,
+        };
+    }
+    if (command.type === "labels") {
+        const roots = session.sessionManager.getTree();
+        const labels = [];
+        const describeEntry = (entry) => {
+            if (entry.type === "message") {
+                const role = entry.message?.role || "message";
+                const text = extractTextFromContent(entry.message?.content);
+                if (text)
+                    return `${role}: "${truncateText(text, 60)}"`;
+                return role;
+            }
+            return `[${entry.type}]`;
+        };
+        const walk = (node) => {
+            if (node.label) {
+                labels.push({ id: node.entry.id, label: node.label, summary: describeEntry(node.entry) });
+            }
+            for (const child of node.children || []) {
+                walk(child);
+            }
+        };
+        for (const root of roots)
+            walk(root);
+        if (labels.length === 0) {
+            return { status: "success", message: "No labels set." };
+        }
+        const lines = ["Labels:", ...labels.map((item) => `• ${item.id} [${item.label}] ${item.summary}`)];
+        return { status: "success", message: lines.join("\n") };
+    }
+    if (command.type === "agent_name") {
+        if (!command.name) {
+            return { status: "success", message: `Agent name: ${ASSISTANT_NAME}` };
+        }
+        const trimmed = command.name.trim();
+        const normalized = trimmed.toLowerCase();
+        const nextName = ["clear", "none", "off", "default"].includes(normalized) ? null : trimmed;
+        const updated = updateAssistantConfig({ name: nextName });
+        const fallback = process.env.ASSISTANT_NAME || "PiClaw";
+        const effective = updated.name || fallback;
+        setAssistantName(effective);
+        return {
+            status: "success",
+            message: nextName ? `Agent name set to ${effective}.` : `Agent name reset to ${effective}.`,
+        };
+    }
+    if (command.type === "agent_avatar") {
+        if (!command.avatar) {
+            const current = ASSISTANT_AVATAR || "(default)";
+            return { status: "success", message: `Agent avatar: ${current}` };
+        }
+        const trimmed = command.avatar.trim();
+        const normalized = trimmed.toLowerCase();
+        const nextAvatar = ["clear", "none", "off", "default"].includes(normalized) ? null : trimmed;
+        const updated = updateAssistantConfig({ avatar: nextAvatar });
+        const fallback = process.env.ASSISTANT_AVATAR || "";
+        const effective = updated.avatar || fallback;
+        setAssistantAvatar(effective);
+        return {
+            status: "success",
+            message: nextAvatar ? `Agent avatar set to ${effective || "(default)"}.` : "Agent avatar reset to default.",
+        };
+    }
     if (command.type === "model") {
         modelRegistry.refresh();
         if (!command.modelId) {
@@ -863,6 +1272,11 @@ export async function applyControlCommand(session, modelRegistry, command) {
         addLine("/switch-session", "Switch to a session file");
         addLine("/fork", "Fork from a previous message");
         addLine("/forks", "List forkable messages");
+        addLine("/tree", "List the session tree (default 10 entries) and navigate branches");
+        addLine("/label", "Set or clear a label on a tree entry");
+        addLine("/labels", "List labeled entries");
+        addLine("/agent-name", "Set or show the agent display name");
+        addLine("/agent-avatar", "Set or show the agent avatar URL");
         addLine("/export-html", "Export session to HTML");
         addLine("/restart", "Restart the agent and stop subprocesses");
         addLine("/commands", "List available commands");

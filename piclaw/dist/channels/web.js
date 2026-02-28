@@ -1,8 +1,8 @@
 import { extname, resolve } from "path";
 import { initTheme } from "@mariozechner/pi-coding-agent";
 import { parseControlCommand } from "../agent-control.js";
-import { ASSISTANT_NAME, TRIGGER_PATTERN, WEB_HOST, WEB_IDLE_TIMEOUT, WEB_PORT } from "../config.js";
-import { attachMediaToMessage, createMedia, deleteMessageByRowId, getMediaById, getMediaInfoById, getMessageByRowId, getMessagesByHashtag, getMessagesSince, getRouterState, getTimeline, hasOlderMessages, searchMessages, setRouterState, storeChatMetadata, storeMessage, } from "../db.js";
+import { ASSISTANT_AVATAR, ASSISTANT_NAME, TRIGGER_PATTERN, WEB_HOST, WEB_IDLE_TIMEOUT, WEB_PORT } from "../config.js";
+import { attachMediaToMessage, clampWebContent, createMedia, deleteMessageByRowId, getMediaById, getMediaInfoById, getMessageByRowId, getMessagesByHashtag, getMessagesSince, getRouterState, getTimeline, hasOlderMessages, searchMessages, setRouterState, storeChatMetadata, storeMessage, } from "../db.js";
 import { detectChannel, formatMessages, formatOutbound } from "../router.js";
 const DEFAULT_CHAT_JID = "web:default";
 const DEFAULT_AGENT_ID = "default";
@@ -96,7 +96,11 @@ export class WebChannel {
     async sendMessage(chatJid, text) {
         const interaction = this.storeMessage(chatJid, text, true, []);
         if (interaction) {
-            this.broadcastEvent("agent_response", interaction);
+            this.broadcastEvent("agent_response", {
+                ...interaction,
+                agent_name: ASSISTANT_NAME,
+                agent_avatar: ASSISTANT_AVATAR || null,
+            });
         }
     }
     loadState() {
@@ -137,6 +141,7 @@ export class WebChannel {
                         description: `${ASSISTANT_NAME} agent`,
                         status: "running",
                         actions: [],
+                        avatar_url: ASSISTANT_AVATAR || null,
                     },
                 ],
             });
@@ -603,13 +608,18 @@ export class WebChannel {
             return toolTitles.get(toolCallId) ?? formatToolTitle(toolName, args);
         };
         const turnId = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        this.broadcastEvent("agent_status", {
+        const withAgentProfile = (payload) => ({
+            ...payload,
+            agent_name: ASSISTANT_NAME,
+            agent_avatar: ASSISTANT_AVATAR || null,
+        });
+        this.broadcastEvent("agent_status", withAgentProfile({
             thread_id: threadId,
             agent_id: agentId,
             type: "thinking",
             title: "Thinking...",
             turn_id: turnId,
-        });
+        }));
         const output = await this.agentPool.runAgent(prompt, chatJid, {
             onEvent: (event) => {
                 if (event.type === "message_update") {
@@ -620,38 +630,38 @@ export class WebChannel {
                     if (messageEvent.type === "thinking_delta") {
                         thoughtBuffer += messageEvent.delta;
                         const { preview, totalLines } = buildPreview(thoughtBuffer, THOUGHT_PREVIEW_LINES);
-                        this.broadcastEvent("agent_thought", {
+                        this.broadcastEvent("agent_thought", withAgentProfile({
                             thread_id: threadId,
                             agent_id: agentId,
                             text: preview,
                             total_lines: totalLines,
                             turn_id: turnId,
-                        });
+                        }));
                     }
                     if (messageEvent.type === "thinking_end") {
                         thoughtBuffer = messageEvent.content || thoughtBuffer;
                         const { preview, totalLines } = buildPreview(thoughtBuffer, THOUGHT_PREVIEW_LINES);
-                        this.broadcastEvent("agent_thought", {
+                        this.broadcastEvent("agent_thought", withAgentProfile({
                             thread_id: threadId,
                             agent_id: agentId,
                             text: preview,
                             total_lines: totalLines,
                             turn_id: turnId,
-                        });
+                        }));
                     }
                     if (messageEvent.type === "toolcall_end") {
                         const title = rememberToolTitle(messageEvent.toolCall.id, messageEvent.toolCall.name, messageEvent.toolCall.arguments);
-                        this.broadcastEvent("agent_status", {
+                        this.broadcastEvent("agent_status", withAgentProfile({
                             thread_id: threadId,
                             agent_id: agentId,
                             type: "tool_call",
                             title,
                             turn_id: turnId,
-                        });
+                        }));
                     }
                     if (messageEvent.type === "text_start") {
                         draftBuffer = "";
-                        this.broadcastEvent("agent_draft", {
+                        this.broadcastEvent("agent_draft", withAgentProfile({
                             thread_id: threadId,
                             agent_id: agentId,
                             text: "",
@@ -659,19 +669,19 @@ export class WebChannel {
                             kind: "draft",
                             mode: "replace",
                             turn_id: turnId,
-                        });
-                        this.broadcastEvent("agent_draft_delta", {
+                        }));
+                        this.broadcastEvent("agent_draft_delta", withAgentProfile({
                             thread_id: threadId,
                             agent_id: agentId,
                             delta: "",
                             reset: true,
                             turn_id: turnId,
-                        });
+                        }));
                     }
                     if (messageEvent.type === "text_delta") {
                         draftBuffer += messageEvent.delta;
                         const { preview, totalLines } = buildPreview(draftBuffer, DRAFT_PREVIEW_LINES);
-                        this.broadcastEvent("agent_draft", {
+                        this.broadcastEvent("agent_draft", withAgentProfile({
                             thread_id: threadId,
                             agent_id: agentId,
                             text: preview,
@@ -679,60 +689,60 @@ export class WebChannel {
                             kind: "draft",
                             mode: "replace",
                             turn_id: turnId,
-                        });
-                        this.broadcastEvent("agent_draft_delta", {
+                        }));
+                        this.broadcastEvent("agent_draft_delta", withAgentProfile({
                             thread_id: threadId,
                             agent_id: agentId,
                             delta: messageEvent.delta,
                             turn_id: turnId,
-                        });
+                        }));
                     }
                 }
                 if (event.type === "tool_execution_start") {
                     const title = rememberToolTitle(event.toolCallId, event.toolName, event.args);
-                    this.broadcastEvent("agent_status", {
+                    this.broadcastEvent("agent_status", withAgentProfile({
                         thread_id: threadId,
                         agent_id: agentId,
                         type: "tool_call",
                         title,
                         turn_id: turnId,
-                    });
+                    }));
                 }
                 if (event.type === "tool_execution_update") {
                     const title = lookupToolTitle(event.toolCallId, event.toolName, event.args);
-                    this.broadcastEvent("agent_status", {
+                    this.broadcastEvent("agent_status", withAgentProfile({
                         thread_id: threadId,
                         agent_id: agentId,
                         type: "tool_status",
                         title,
                         status: "Working...",
                         turn_id: turnId,
-                    });
+                    }));
                 }
                 if (event.type === "tool_execution_end") {
                     const title = lookupToolTitle(event.toolCallId, event.toolName);
                     toolTitles.delete(event.toolCallId);
-                    this.broadcastEvent("agent_status", {
+                    this.broadcastEvent("agent_status", withAgentProfile({
                         thread_id: threadId,
                         agent_id: agentId,
                         type: "tool_status",
                         title,
                         status: event.isError ? "Failed" : "Done",
                         turn_id: turnId,
-                    });
+                    }));
                 }
             },
         });
         if (output.status === "error") {
             this.lastAgentTimestamp[chatJid] = prevCursor;
             this.saveState();
-            this.broadcastEvent("agent_status", {
+            this.broadcastEvent("agent_status", withAgentProfile({
                 thread_id: threadId,
                 agent_id: agentId,
                 type: "error",
                 title: output.error || "Agent error",
                 turn_id: turnId,
-            });
+            }));
             return;
         }
         if (output.result) {
@@ -740,16 +750,20 @@ export class WebChannel {
             if (text) {
                 const interaction = this.storeMessage(chatJid, text, true, []);
                 if (interaction) {
-                    this.broadcastEvent("agent_response", interaction);
+                    this.broadcastEvent("agent_response", {
+                        ...interaction,
+                        agent_name: ASSISTANT_NAME,
+                        agent_avatar: ASSISTANT_AVATAR || null,
+                    });
                 }
             }
         }
-        this.broadcastEvent("agent_status", {
+        this.broadcastEvent("agent_status", withAgentProfile({
             thread_id: threadId,
             agent_id: agentId,
             type: "done",
             turn_id: turnId,
-        });
+        }));
     }
     storeMessage(chatJid, content, isBot, mediaIds) {
         const timestamp = new Date().toISOString();
@@ -775,12 +789,14 @@ export class WebChannel {
             interaction.data.agent_id = DEFAULT_AGENT_ID;
             return interaction;
         }
+        const { content: safeContent, meta } = clampWebContent(content);
         return {
             id: rowId,
             timestamp,
             data: {
                 type: isBot ? "agent_response" : "user_message",
-                content,
+                content: safeContent,
+                content_meta: meta,
                 agent_id: DEFAULT_AGENT_ID,
                 media_ids: mediaIds,
             },

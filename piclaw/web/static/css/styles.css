@@ -470,6 +470,21 @@ body {
     max-width: 100%;
 }
 
+.post-content.truncated {
+    background: var(--bg-secondary);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-sm);
+}
+
+.post-content.truncated .truncated-title {
+    color: var(--text-primary);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
 .post-content p {
     margin: 0 0 0.5em 0;
 }
