@@ -11,10 +11,10 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 up: ## Start the container in detached mode
-	docker compose up -d
+	docker-compose up -d
 
 down: ## Stop and remove the container
-	docker compose down
+	docker-compose down
 
 enter: ## Enter the running container as agent
 	docker exec -u agent -it pibox bash
